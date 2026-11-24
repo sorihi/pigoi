@@ -1,0 +1,11 @@
+package {{ .Name }}
+
+import "context"
+
+type IService interface {
+	Handle(ctx context.Context, body []byte) error
+}
+
+type IRepository interface {
+	Process(ctx context.Context, body []byte) error
+}

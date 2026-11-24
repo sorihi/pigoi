@@ -1,0 +1,34 @@
+package rabbitmq
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"testing"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+	"go.uber.org/fx/fxtest"
+
+	"{{ .Module }}/pkg/configuration"
+)
+
+func TestNewConnectionDefersDialUntilStartup(t *testing.T) {
+	t.Setenv("RABBITMQ_URL", "invalid://localhost")
+	lifecycle := fxtest.NewLifecycle(t)
+	connection := NewConnection(lifecycle, &configuration.Config{})
+	if channel, err := connection.Channel(); channel != nil || !errors.Is(err, amqp.ErrClosed) {
+		t.Fatalf("Channel before startup = %v, %v", channel, err)
+	}
+	if err := lifecycle.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "connect to RabbitMQ") {
+		t.Fatalf("startup error = %v, want a RabbitMQ connection error", err)
+	}
+}
+
+func TestNewConnectionUsesYAMLSetting(t *testing.T) {
+	t.Setenv("RABBITMQ_URL", "")
+	lifecycle := fxtest.NewLifecycle(t)
+	NewConnection(lifecycle, &configuration.Config{RabbitMQ: configuration.RabbitMQConfig{URL: "invalid://localhost"}})
+	if err := lifecycle.Start(context.Background()); err == nil || !strings.Contains(err.Error(), "connect to RabbitMQ") {
+		t.Fatalf("startup error = %v, want a RabbitMQ connection error", err)
+	}
+}

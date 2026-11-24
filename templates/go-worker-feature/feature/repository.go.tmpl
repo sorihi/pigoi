@@ -1,0 +1,14 @@
+package {{ .Name }}
+
+import "context"
+
+type Repository struct{}
+
+func NewRepository() *Repository {
+	return &Repository{}
+}
+
+func (r *Repository) Process(ctx context.Context, body []byte) error {
+	// Add message persistence or other side effects here.
+	return nil
+}

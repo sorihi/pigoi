@@ -1,0 +1,12 @@
+package response
+
+import (
+	"github.com/gin-gonic/gin"
+	"{{ .Module }}/helpers/utils"
+)
+
+func GetHeader(ctx *gin.Context) utils.GeneralHeader {
+	return utils.GeneralHeader{
+		// TODO: Add header mapping here
+	}
+}

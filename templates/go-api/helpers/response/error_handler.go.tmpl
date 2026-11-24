@@ -1,0 +1,57 @@
+package response
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"{{ .Module }}/helpers/utils"
+	"{{ .Module }}/pkg/logger"
+)
+
+func ErrorHandler(ctx *gin.Context, logger *logger.AppLog, request interface{}, err error) {
+	var (
+		errStruct ErrorStruct
+	)
+
+	err = CheckTimeoutErr(err)
+
+	if errors.As(err, &errStruct) {
+		logger.LogResponse(ctx, ctx.Request, nil, request, errStruct)
+		SendErrorResponse4xx(ctx, errStruct.HTTPCode, errStruct)
+		ctx.Abort()
+		return
+	}
+
+	if _, IsError := err.(*json.UnmarshalTypeError); IsError {
+		errStruct := ErrorStruct{
+			HTTPCode:    http.StatusBadRequest,
+			Code:        RCBadRequest,
+			Description: DescriptionFailed,
+			Message:     "Bad Request",
+		}
+		logger.LogResponse(ctx, ctx.Request, nil, request, errStruct)
+		SendErrorResponse4xx(ctx, errStruct.HTTPCode, errStruct)
+		ctx.Abort()
+		return
+	}
+
+	// Default General Error
+	resp := ErrorStruct{
+		Code:        RCErrorGeneral,
+		Description: DescriptionFailed,
+		Message:     ErrorGeneral,
+	}
+
+	logger.LogResponse(ctx, ctx.Request, nil, request, errStruct)
+	SendErrorResponse5xx(ctx, http.StatusInternalServerError, resp)
+	ctx.Abort()
+}
+
+func CheckTimeoutErr(err error) error {
+	if err.Error() == utils.DescriptionTimeout {
+		return ErrTimeout
+	}
+	return err
+}

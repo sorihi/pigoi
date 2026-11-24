@@ -1,0 +1,104 @@
+package logger
+
+import (
+	"bufio"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/sirupsen/logrus"
+
+	"{{ .Module }}/pkg/configuration"
+)
+
+func TestLoggerOptions(t *testing.T) {
+	options := createDefaultOptions()
+	if options.basePath != LogFolder || options.devLevel != logrus.DebugLevel {
+		t.Fatalf("unexpected defaults: %+v", options)
+	}
+
+	dir := t.TempDir()
+	options.apply([]loggerOption{
+		BasePath(dir), FileTemplate("test.log"),
+		DevelopmentPrefix("development"), StagingPrefix("stage"), ProductionPrefix("production"),
+		DevelopmentLevel(logrus.TraceLevel), StagingLevel(logrus.WarnLevel), ProductionLevel(logrus.ErrorLevel),
+	})
+	if options.basePath != dir || options.fileTemplate != "test.log" {
+		t.Fatalf("unexpected file options: %+v", options)
+	}
+
+	for _, tt := range []struct {
+		environment string
+		prefix      string
+		level       logrus.Level
+	}{
+		{"local", "development", logrus.TraceLevel},
+		{"development", "development", logrus.TraceLevel},
+		{"staging", "stage", logrus.WarnLevel},
+		{"production", "production", logrus.ErrorLevel},
+	} {
+		config := &configuration.AppConfig{Environment: tt.environment}
+		if prefix, level := options.getPrefix(config), options.getLevel(config); prefix != tt.prefix || level != tt.level {
+			t.Errorf("%s: prefix = %q, level = %v; want %q, %v", tt.environment, prefix, level, tt.prefix, tt.level)
+		}
+	}
+}
+
+func TestAppLogWritesStructuredEntries(t *testing.T) {
+	dir := t.TempDir()
+	appLog := New(&configuration.AppConfig{Environment: "local"}, BasePath(dir), DevelopmentLevel(logrus.TraceLevel))
+	if appLog.Logger.GetLevel() != logrus.TraceLevel {
+		t.Fatalf("level = %v, want trace", appLog.Logger.GetLevel())
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/sample", nil)
+	ctx := req.Context()
+	payload := struct{ Code, Message string }{"00", "accepted"}
+	appLog.LogRequest(ctx, req, "sample request")
+	appLog.LogResponse(ctx, req, &http.Response{StatusCode: http.StatusAccepted}, nil, payload)
+	appLog.LogResponse(ctx, req, nil, nil, nil)
+	appLog.LogWarn(ctx, "sample warning", errors.New("sample error"))
+
+	paths, err := filepath.Glob(filepath.Join(dir, "*.log"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("log files = %v, %v", paths, err)
+	}
+	var entries []map[string]any
+	for _, path := range paths {
+		file, err := os.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = file.Close() })
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			var entry map[string]any
+			if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
+				t.Fatal(err)
+			}
+			entries = append(entries, entry)
+		}
+		if err := scanner.Err(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(entries) != 4 {
+		t.Fatalf("entries = %v, want 4", entries)
+	}
+	if entries[0]["msg"] != LogTypeRequest || entries[0]["request_body"] != `"sample request"` {
+		t.Errorf("request entry = %v", entries[0])
+	}
+	if entries[1]["status_code"] != float64(http.StatusAccepted) || entries[1]["response_body_rc"] != "00" || entries[1]["response_body_desc"] != "accepted" {
+		t.Errorf("response entry = %v", entries[1])
+	}
+	if _, exists := entries[2]["status_code"]; exists {
+		t.Errorf("response without status = %v", entries[2])
+	}
+	if entries[3]["msg"] != LogTypeWarning || entries[3]["error"] != "sample error" {
+		t.Errorf("warning entry = %v", entries[3])
+	}
+}

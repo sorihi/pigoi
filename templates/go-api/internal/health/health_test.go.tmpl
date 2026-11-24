@@ -1,0 +1,37 @@
+package health
+
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"{{ .Module }}/pkg/configuration"
+)
+
+func TestHealthRoute(t *testing.T) {
+	tests := []struct {
+		name    string
+		appName string
+		status  int
+		body    string
+	}{
+		{"healthy", "test", http.StatusOK, `{"status":"ok"}`},
+		{"missing app name", "", http.StatusInternalServerError, `{"error":"Malformed config"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			config := &configuration.Config{App: configuration.AppConfig{Name: tt.appName}}
+			router := gin.New()
+			NewRoute(NewDelivery(NewService(config))).RegisterRoutes(router.Group("/api"))
+
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/health", nil))
+			if response.Code != tt.status || response.Body.String() != tt.body {
+				t.Fatalf("response = %d %s, want %d %s", response.Code, response.Body.String(), tt.status, tt.body)
+			}
+		})
+	}
+}

@@ -1,0 +1,59 @@
+package configuration
+
+import (
+	"fmt"
+
+	"github.com/spf13/viper"
+)
+
+type Config struct {
+	App      AppConfig      `mapstructure:"app"`
+	DB       DBConfig       `mapstructure:"db"`
+	Redis    RedisConfig    `mapstructure:"redis"`
+	RabbitMQ RabbitMQConfig `mapstructure:"rabbitmq"`
+}
+
+type AppConfig struct {
+	Name        string `mapstructure:"name"`
+	Environment string `mapstructure:"environment"`
+	Debug       bool   `mapstructure:"debug"`
+	Host        string `mapstructure:"host"`
+	Port        int    `mapstructure:"port"`
+	Protocol    string `mapstructure:"protocol"`
+}
+
+type DBConfig struct {
+	Name     string `mapstructure:"name"`
+	User     string `mapstructure:"usr"`
+	Password string `mapstructure:"pw"`
+	Port     int    `mapstructure:"port"`
+	Host     string `mapstructure:"host"`
+}
+
+type RedisConfig struct {
+	Addr     string `mapstructure:"addr"`
+	Password string `mapstructure:"pw"`
+	DB       int    `mapstructure:"db"`
+}
+
+type RabbitMQConfig struct {
+	URL string `mapstructure:"url"`
+}
+
+func NewConfig() *Config {
+	const configPath = "configs/app-config-map.yaml"
+
+	v := viper.New()
+	v.SetConfigFile(configPath)
+
+	if err := v.ReadInConfig(); err != nil {
+		panic(fmt.Errorf("read %s: %w", configPath, err))
+	}
+
+	var config Config
+	if err := v.Unmarshal(&config); err != nil {
+		panic(fmt.Errorf("decode %s: %w", configPath, err))
+	}
+
+	return &config
+}

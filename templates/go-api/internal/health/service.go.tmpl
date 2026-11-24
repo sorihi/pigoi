@@ -1,0 +1,25 @@
+package health
+
+import (
+	"errors"
+
+	"{{ .Module }}/pkg/configuration"
+)
+
+type Service struct {
+	config *configuration.Config
+}
+
+func NewService(config *configuration.Config) *Service {
+	return &Service{
+		config: config,
+	}
+}
+
+func (s *Service) Check() error {
+	if s.config.App.Name == "" {
+		return errors.New("Malformed config")
+	}
+
+	return nil
+}

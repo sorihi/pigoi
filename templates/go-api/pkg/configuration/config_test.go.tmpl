@@ -1,0 +1,72 @@
+package configuration
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestNewConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.Mkdir("configs", 0755); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join("configs", "app-config-map.yaml")
+	yaml := `app:
+  name: sample
+  debug: true
+  port: 8080
+db:
+  usr: sample-user
+  port: 3306
+redis:
+  addr: localhost:6379
+  db: 2
+rabbitmq:
+  url: amqp://localhost:5672/
+`
+	if err := os.WriteFile(configPath, []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	config := NewConfig()
+	want := Config{
+		App:      AppConfig{Name: "sample", Debug: true, Port: 8080},
+		DB:       DBConfig{User: "sample-user", Port: 3306},
+		Redis:    RedisConfig{Addr: "localhost:6379", DB: 2},
+		RabbitMQ: RabbitMQConfig{URL: "amqp://localhost:5672/"},
+	}
+	if *config != want {
+		t.Fatalf("config = %+v, want %+v", *config, want)
+	}
+}
+
+func TestNewConfigInvalidFile(t *testing.T) {
+	tests := []struct{ name, yaml, errorPrefix string }{
+		{"missing", "", "read configs/app-config-map.yaml"},
+		{"malformed yaml", "app: [", "read configs/app-config-map.yaml"},
+		{"invalid field", "app:\n  port: invalid\n", "decode configs/app-config-map.yaml"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Chdir(t.TempDir())
+			if tt.yaml != "" {
+				if err := os.Mkdir("configs", 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile("configs/app-config-map.yaml", []byte(tt.yaml), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			defer func() {
+				if got := fmt.Sprint(recover()); !strings.HasPrefix(got, tt.errorPrefix) {
+					t.Errorf("panic = %q, want prefix %q", got, tt.errorPrefix)
+				}
+			}()
+			NewConfig()
+		})
+	}
+}

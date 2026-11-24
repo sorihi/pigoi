@@ -1,0 +1,51 @@
+package internal
+
+import (
+	"context"
+	"os"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxtest"
+
+	"{{ .Module }}/pkg/configuration"
+)
+
+func TestRunBuildsApplication(t *testing.T) {
+	t.Chdir(t.TempDir())
+	if err := os.Mkdir("configs", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("configs/app-config-map.yaml", []byte("app:\n  name: test\ndb:\n  name: test\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	originalRun := runApplication
+	t.Cleanup(func() { runApplication = originalRun })
+	called := false
+	runApplication = func(app *fx.App) {
+		called = true
+		if err := app.Err(); err != nil {
+			t.Fatalf("construct Fx application: %v", err)
+		}
+	}
+
+	Run()
+	if !called {
+		t.Fatal("Run did not start the Fx application")
+	}
+}
+
+func TestStartHTTPServerLifecycle(t *testing.T) {
+	lifecycle := fxtest.NewLifecycle(t)
+	config := &configuration.Config{App: configuration.AppConfig{Host: "127.0.0.1"}}
+	appLog := newAppLogger(config)
+	startHTTPServer(lifecycle, nil, config, gin.New(), nil, appLog)
+
+	if err := lifecycle.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := lifecycle.Stop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}

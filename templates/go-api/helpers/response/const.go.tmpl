@@ -1,0 +1,28 @@
+package response
+
+import (
+	"net/http"
+)
+
+const (
+	RCSuccess      string = "00"
+	RCErrorGeneral string = "99"
+	RCBadRequest   string = "BAD01"
+	RCTimeout             = "TO"
+)
+
+const (
+	DescriptionSuccess string = "success"
+	DescriptionFailed  string = "failed"
+	ErrorGeneral       string = "general error"
+)
+
+var (
+	ErrBadRequest                 = ErrorStruct{Code: "BAD01", Message: "Bad Request", HTTPCode: http.StatusBadRequest}
+	ErrStatusLastStepNotCompleted = ErrorStruct{Code: "BAD01", Message: "Status last step not completed", HTTPCode: http.StatusBadRequest}
+	ErrDataNotFound               = ErrorStruct{Code: "DT01", Message: "Data Not Found", HTTPCode: http.StatusNotFound}
+	ErrRateLimit                  = ErrorStruct{Code: "LIM01", Message: "limit exceeded", HTTPCode: http.StatusTooManyRequests}
+	ErrNeedActivation             = ErrorStruct{Code: "UAC02", Message: "User activation data not found", HTTPCode: http.StatusBadRequest}
+	ErrTimeout                    = ErrorStruct{Code: RCTimeout, Message: "Timeout", HTTPCode: http.StatusGatewayTimeout}
+	ErrInvalidToken               = ErrorStruct{Code: "TK01", Message: "Token Failed. Make sure the challenge code and password or pin are correct.", HTTPCode: http.StatusBadRequest}
+)

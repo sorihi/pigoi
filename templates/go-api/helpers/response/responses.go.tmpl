@@ -1,0 +1,38 @@
+package response
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"{{ .Module }}/helpers/utils"
+)
+
+func SendSuccessResponse(c *gin.Context, resp Response) {
+	c.JSON(http.StatusOK, resp)
+}
+
+func SendErrorResponse4xx(c *gin.Context, statusCode int, err ErrorStruct) {
+	if utils.IsEmptyString(err.Description) {
+		err.Description = DescriptionFailed
+	}
+	resp := Response{
+		ResponseCode: err.Code,
+		Description:  err.Description,
+		Message:      err.Message,
+		Data:         err.Data,
+	}
+	c.JSON(statusCode, resp)
+}
+
+func SendErrorResponse5xx(c *gin.Context, statusCode int, err ErrorStruct) {
+	if utils.IsEmptyString(err.Description) {
+		err.Description = DescriptionFailed
+	}
+	resp := Response{
+		ResponseCode: err.Code,
+		Description:  err.Description,
+		Message:      err.Message,
+		Data:         nil,
+	}
+	c.JSON(statusCode, resp)
+}

@@ -1,0 +1,34 @@
+package {{ .Name }}
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	amqp "github.com/rabbitmq/amqp091-go"
+)
+
+type Consumer struct {
+	service IService
+}
+
+func NewConsumer(service IService) *Consumer {
+	return &Consumer{service: service}
+}
+
+func (c *Consumer) Consume(ctx context.Context, delivery amqp.Delivery) error {
+	if err := c.service.Handle(ctx, delivery.Body); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		log.Printf("reject RabbitMQ delivery from %s: %v", queueName, err)
+		if err := delivery.Nack(false, false); err != nil {
+			return fmt.Errorf("reject delivery: %w", err)
+		}
+		return nil
+	}
+	if err := delivery.Ack(false); err != nil {
+		return fmt.Errorf("acknowledge delivery: %w", err)
+	}
+	return nil
+}

@@ -1,0 +1,132 @@
+package logger
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"reflect"
+	"time"
+
+	"github.com/sirupsen/logrus"
+	"{{ .Module }}/pkg/configuration"
+	"go.elastic.co/apm/module/apmlogrus/v2"
+)
+
+type AppLog struct {
+	Logger *logrus.Logger
+}
+
+// New constructor of appLog
+func New(config *configuration.AppConfig, options ...loggerOption) *AppLog {
+	loggerOptions := createDefaultOptions()
+	logger := logrus.New()
+	if options != nil {
+		loggerOptions.apply(options)
+	}
+	logger.SetLevel(loggerOptions.getLevel(config))
+	logger.SetFormatter(&logrus.JSONFormatter{DisableTimestamp: true})
+	logger.SetOutput(dailyLogWriter{directory: loggerOptions.basePath})
+
+	return &AppLog{Logger: logger}
+}
+
+func (l *AppLog) LogRequest(ctx context.Context, req *http.Request, request interface{}) {
+	timestamp := time.Now().Format(LogTimeFormat)
+	jsonHeader, _ := json.Marshal(req.Header)
+	jsonReq, _ := json.Marshal(request)
+
+	traceContextFields := apmlogrus.TraceContext(ctx)
+	logger := l.Logger.WithFields(traceContextFields)
+
+	logger.WithFields(logrus.Fields{
+		"request_header": string(jsonHeader),
+		"request_body":   string(jsonReq),
+		"type":           LogTypeRequest,
+		"url":            fmt.Sprintf("%s %s%s", req.Method, req.Host, req.URL),
+		"timestamp":      timestamp,
+	}).Info(LogTypeRequest)
+}
+
+func (l *AppLog) LogResponse(ctx context.Context, req *http.Request, resp *http.Response, request, response interface{}) {
+	timestamp := time.Now().Format(LogTimeFormat)
+	jsonHeader, _ := json.Marshal(req.Header)
+	jsonReq, _ := json.Marshal(request)
+	jsonRes, _ := json.Marshal(response)
+
+	rc, desc := l.getResponseDetail(response)
+
+	traceContextFields := apmlogrus.TraceContext(ctx)
+	logger := l.Logger.WithFields(traceContextFields)
+
+	fields := logrus.Fields{
+		"request_header":     string(jsonHeader),
+		"request_body":       string(jsonReq),
+		"response_body":      string(jsonRes),
+		"response_body_rc":   rc,
+		"response_body_desc": desc,
+		"type":               LogTypeResponse,
+		"timestamp":          timestamp,
+		"url":                fmt.Sprintf("%s %s%s", req.Method, req.Host, req.URL),
+	}
+
+	if resp != nil {
+		fields["response_header"] = resp.Header
+		fields["status_code"] = resp.StatusCode
+	}
+
+	logger.WithFields(fields).Info(LogTypeResponse)
+}
+
+func (l *AppLog) LogWarn(ctx context.Context, message string, err error) {
+	timestamp := time.Now().Format(LogTimeFormat)
+
+	traceContextFields := apmlogrus.TraceContext(ctx)
+	logger := l.Logger.WithFields(traceContextFields)
+
+	logger.WithFields(logrus.Fields{
+		"error":     err.Error(),
+		"message":   message,
+		"timestamp": timestamp,
+	}).Warn(LogTypeWarning)
+}
+
+func (l *AppLog) getResponseDetail(data interface{}) (rc string, desc string) {
+	val := reflect.ValueOf(data)
+	if val.Kind() == reflect.Struct {
+		fieldRC := val.FieldByName("Code")
+		if fieldRC.Kind() == reflect.String {
+			rc = fieldRC.String()
+		}
+
+		fieldDesc := val.FieldByName("Message")
+		if fieldDesc.Kind() == reflect.String {
+			desc = fieldDesc.String()
+		}
+	}
+	return rc, desc
+}
+
+type dailyLogWriter struct {
+	directory string
+}
+
+func (w dailyLogWriter) Write(data []byte) (int, error) {
+	if err := os.MkdirAll(w.directory, 0755); err != nil {
+		return os.Stderr.Write(data)
+	}
+
+	filename := filepath.Join(w.directory, time.Now().Format(LogFilenameFormat))
+	file, err := os.OpenFile(filename, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return os.Stderr.Write(data)
+	}
+	n, err := file.Write(data)
+	closeErr := file.Close()
+	if err != nil {
+		return n, err
+	}
+	return n, closeErr
+}

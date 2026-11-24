@@ -1,0 +1,51 @@
+package database
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"net"
+	"strconv"
+	"strings"
+
+	"github.com/go-sql-driver/mysql"
+	"go.uber.org/fx"
+
+	"{{ .Module }}/pkg/configuration"
+)
+
+func NewSQL(lifecycle fx.Lifecycle, config *configuration.Config) (*sql.DB, error) {
+	settings := config.DB
+	if strings.TrimSpace(settings.Name) == "" {
+		return nil, errors.New("db.name is required")
+	}
+
+	driverConfig := mysql.NewConfig()
+	driverConfig.User = settings.User
+	driverConfig.Passwd = settings.Password
+	driverConfig.Net = "tcp"
+	driverConfig.Addr = net.JoinHostPort(settings.Host, strconv.Itoa(settings.Port))
+	driverConfig.DBName = settings.Name
+	driverConfig.ParseTime = true
+
+	connector, err := mysql.NewConnector(driverConfig)
+	if err != nil {
+		return nil, fmt.Errorf("configure MySQL pool: %w", err)
+	}
+	db := sql.OpenDB(connector)
+
+	lifecycle.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			if err := db.PingContext(ctx); err != nil {
+				return errors.Join(fmt.Errorf("connect to MySQL: %w", err), db.Close())
+			}
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			return db.Close()
+		},
+	})
+
+	return db, nil
+}

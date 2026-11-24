@@ -1,0 +1,71 @@
+package utils
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"strings"
+	"testing"
+)
+
+type contextKey struct{}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func TestRequest(t *testing.T) {
+	tests := []struct {
+		name           string
+		transportError error
+		wantError      string
+	}{
+		{name: "success"},
+		{name: "timeout", transportError: context.DeadlineExceeded, wantError: DescriptionTimeout},
+		{name: "transport error", transportError: errors.New("failed"), wantError: "failed"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := netClient
+			t.Cleanup(func() { netClient = original })
+			ctx := context.WithValue(context.Background(), contextKey{}, "test value")
+			netClient = &http.Client{Transport: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if req.Context().Value(contextKey{}) != "test value" {
+					t.Error("request did not preserve its context value")
+				}
+				if tt.transportError != nil {
+					return nil, tt.transportError
+				}
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("ok"))}, nil
+			})}
+			req, err := http.NewRequest(http.MethodGet, "http://example.test", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := Request(ctx, req)
+			if tt.wantError != "" {
+				if resp != nil || err == nil || !strings.Contains(err.Error(), tt.wantError) {
+					t.Fatalf("Request = %v, %v; want error containing %q", resp, err, tt.wantError)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			body, err := io.ReadAll(resp.Body)
+			if err != nil || resp.StatusCode != http.StatusOK || string(body) != "ok" {
+				t.Fatalf("response = %d %q, %v", resp.StatusCode, body, err)
+			}
+		})
+	}
+}
+
+func TestIsEmptyString(t *testing.T) {
+	for input, want := range map[string]bool{"": true, " \t\n": true, " value ": false} {
+		if got := IsEmptyString(input); got != want {
+			t.Errorf("IsEmptyString(%q) = %t, want %t", input, got, want)
+		}
+	}
+}

@@ -1,0 +1,26 @@
+package health
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+type Delivery struct {
+	service IService
+}
+
+func NewDelivery(service IService) *Delivery {
+	return &Delivery{
+		service: service,
+	}
+}
+
+func (d *Delivery) Check(ctx *gin.Context) {
+	if err := d.service.Check(); err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"status": "ok"})
+}

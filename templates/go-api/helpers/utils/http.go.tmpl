@@ -1,0 +1,49 @@
+package utils
+
+import (
+	"context"
+	"errors"
+	"net"
+	"net/http"
+	"time"
+
+	"go.elastic.co/apm/module/apmhttp/v2"
+)
+
+type GeneralHeader struct {
+	// TODO: Add header fields here
+}
+
+var netTransport = &http.Transport{
+	DialContext: (&net.Dialer{
+		Timeout:   10 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	TLSHandshakeTimeout: 10 * time.Second,
+	MaxIdleConns:        100,
+	MaxIdleConnsPerHost: 100,
+}
+var netClient = &http.Client{
+	Timeout:   30 * time.Second,
+	Transport: netTransport,
+}
+
+const DescriptionTimeout string = "timeout"
+
+// Request function
+func Request(ctx context.Context, request *http.Request) (*http.Response, error) {
+	var client *http.Client
+	client = apmhttp.WrapClient(netClient)
+
+	client.Timeout = 30 * time.Second
+	resp, err := client.Do(request.WithContext(ctx))
+	if err != nil {
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			err = errors.New(DescriptionTimeout)
+			return nil, err
+		}
+		return nil, err
+	}
+	return resp, nil
+}

@@ -1,0 +1,113 @@
+package response
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"{{ .Module }}/helpers/utils"
+	"{{ .Module }}/pkg/configuration"
+	"{{ .Module }}/pkg/logger"
+)
+
+func TestSendResponses(t *testing.T) {
+	tests := []struct {
+		name   string
+		send   func(*gin.Context)
+		status int
+		want   Response
+	}{
+		{"success", func(ctx *gin.Context) {
+			SendSuccessResponse(ctx, Response{ResponseCode: RCSuccess, Description: DescriptionSuccess, Data: "result"})
+		}, http.StatusOK, Response{ResponseCode: RCSuccess, Description: DescriptionSuccess, Data: "result"}},
+		{"client error", func(ctx *gin.Context) {
+			SendErrorResponse4xx(ctx, http.StatusBadRequest, ErrorStruct{Code: RCBadRequest, Data: "detail"})
+		}, http.StatusBadRequest, Response{ResponseCode: RCBadRequest, Description: DescriptionFailed, Data: "detail"}},
+		{"server error", func(ctx *gin.Context) {
+			SendErrorResponse5xx(ctx, http.StatusInternalServerError, ErrorStruct{Code: RCErrorGeneral, Data: "private"})
+		}, http.StatusInternalServerError, Response{ResponseCode: RCErrorGeneral, Description: DescriptionFailed}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			tt.send(ctx)
+			assertResponse(t, recorder, tt.status, tt.want)
+		})
+	}
+}
+
+func TestErrorHandler(t *testing.T) {
+	appLog := logger.New(&configuration.AppConfig{})
+	appLog.Logger.SetOutput(io.Discard)
+	var number int
+	decodeErr := json.Unmarshal([]byte(`"invalid"`), &number)
+	var typeErr *json.UnmarshalTypeError
+	if !errors.As(decodeErr, &typeErr) {
+		t.Fatalf("JSON fixture returned %T, want *json.UnmarshalTypeError", decodeErr)
+	}
+	tests := []struct {
+		name    string
+		err     error
+		status  int
+		code    string
+		message string
+	}{
+		{"typed error", fmt.Errorf("fetch: %w", ErrDataNotFound), http.StatusNotFound, ErrDataNotFound.Code, ErrDataNotFound.Message},
+		{"timeout", errors.New(utils.DescriptionTimeout), http.StatusGatewayTimeout, RCTimeout, ErrTimeout.Message},
+		{"JSON error", typeErr, http.StatusBadRequest, RCBadRequest, "Bad Request"},
+		{"unexpected error", errors.New("private"), http.StatusInternalServerError, RCErrorGeneral, ErrorGeneral},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+			ErrorHandler(ctx, appLog, nil, tt.err)
+			if !ctx.IsAborted() {
+				t.Error("handler did not abort the request")
+			}
+			assertResponse(t, recorder, tt.status, Response{
+				ResponseCode: tt.code, Description: DescriptionFailed, Message: tt.message,
+			})
+		})
+	}
+}
+
+func TestCheckTimeoutErr(t *testing.T) {
+	err := errors.New("different error")
+	if got := CheckTimeoutErr(err); got != err {
+		t.Errorf("CheckTimeoutErr returned %v, want %v", got, err)
+	}
+	if got := CheckTimeoutErr(errors.New(utils.DescriptionTimeout)); !errors.Is(got, ErrTimeout) {
+		t.Errorf("CheckTimeoutErr returned %v, want %v", got, ErrTimeout)
+	}
+	if got := ErrTimeout.Error(); got != ErrTimeout.Message {
+		t.Errorf("Error() = %q, want %q", got, ErrTimeout.Message)
+	}
+}
+
+func TestGetHeader(t *testing.T) {
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	if got := GetHeader(ctx); got != (utils.GeneralHeader{}) {
+		t.Errorf("GetHeader = %+v, want empty scaffold headers", got)
+	}
+}
+
+func assertResponse(t *testing.T, recorder *httptest.ResponseRecorder, status int, want Response) {
+	t.Helper()
+	var got Response
+	if err := json.Unmarshal(recorder.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != status || got != want {
+		t.Fatalf("response = %d %+v, want %d %+v", recorder.Code, got, status, want)
+	}
+}

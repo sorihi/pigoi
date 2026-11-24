@@ -1,0 +1,23 @@
+package {{ .Name }}
+
+type Service struct {
+	repo IRepository
+	// Add your service dependencies here
+}
+
+func NewService(repo IRepository) *Service {
+	return &Service{
+		repo: repo,
+		// Initialize your service dependencies here
+	}
+}
+
+// Implement the IService interface methods here
+func (s *Service) DummyMethod() error {
+	// Example implementation of a service method
+	err := s.repo.DummyCall()
+	if err != nil {
+		return err
+	}
+	return nil
+}

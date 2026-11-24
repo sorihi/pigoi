@@ -1,0 +1,17 @@
+package {{ .Name }}
+
+import "github.com/gin-gonic/gin"
+
+type Route struct {
+	delivery *Delivery
+}
+
+func NewRoute(delivery *Delivery) *Route {
+	return &Route{
+		delivery: delivery,
+	}
+}
+
+func (r *Route) RegisterRoutes(routerGroup *gin.RouterGroup) {
+	routerGroup.GET("/dummy", r.delivery.DummyHandler)
+}

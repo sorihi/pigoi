@@ -1,0 +1,15 @@
+package main
+
+import "testing"
+
+func TestMainDelegatesToApplication(t *testing.T) {
+	originalRun := run
+	t.Cleanup(func() { run = originalRun })
+	called := false
+	run = func() { called = true }
+
+	main()
+	if !called {
+		t.Fatal("main did not start the application")
+	}
+}

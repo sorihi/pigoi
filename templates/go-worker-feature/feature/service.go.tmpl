@@ -1,0 +1,19 @@
+package {{ .Name }}
+
+import (
+	"context"
+	"fmt"
+)
+
+type Service struct {
+	repo IRepository
+}
+
+func NewService(repo IRepository) *Service {
+	return &Service{repo: repo}
+}
+
+func (s *Service) Handle(ctx context.Context, body []byte) error {
+	fmt.Println(string(body))
+	return s.repo.Process(ctx, body)
+}

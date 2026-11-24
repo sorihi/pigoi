@@ -1,0 +1,53 @@
+package database
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"go.uber.org/fx"
+
+	"{{ .Module }}/pkg/configuration"
+)
+
+type recordedHooks struct {
+	hooks []fx.Hook
+}
+
+func (r *recordedHooks) Append(hook fx.Hook) {
+	r.hooks = append(r.hooks, hook)
+}
+
+func TestNewSQLRequiresDatabaseName(t *testing.T) {
+	lifecycle := new(recordedHooks)
+	db, err := NewSQL(lifecycle, &configuration.Config{DB: configuration.DBConfig{Name: " "}})
+	if db != nil || err == nil || len(lifecycle.hooks) != 0 {
+		t.Fatalf("NewSQL = %v, %v; registered hooks = %d", db, err, len(lifecycle.hooks))
+	}
+}
+
+func TestNewSQLLifecycle(t *testing.T) {
+	lifecycle := new(recordedHooks)
+	config := &configuration.Config{DB: configuration.DBConfig{Name: "test", Host: "127.0.0.1", Port: 3306}}
+	db, err := NewSQL(lifecycle, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if len(lifecycle.hooks) != 1 {
+		t.Fatalf("registered hooks = %d, want 1", len(lifecycle.hooks))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	hook := lifecycle.hooks[0]
+	if err := hook.OnStart(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("startup error = %v, want context.Canceled", err)
+	}
+	if err := hook.OnStop(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PingContext(context.Background()); err == nil {
+		t.Fatal("pool remained open after shutdown")
+	}
+}

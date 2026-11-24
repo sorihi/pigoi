@@ -1,0 +1,72 @@
+package internal
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"net"
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"{{ .Module }}/internal/health"
+	"{{ .Module }}/pkg/configuration"
+	"{{ .Module }}/pkg/database"
+	"{{ .Module }}/pkg/logger"
+	"{{ .Module }}/pkg/rabbitmq"
+	"go.uber.org/fx"
+)
+
+var runApplication = (*fx.App).Run
+
+func Run() {
+	runApplication(fx.New(
+		fx.Provide(
+			configuration.NewConfig,
+			newAppLogger,
+			gin.Default,
+			database.NewSQL,
+			rabbitmq.NewConnection,
+
+			// features
+			fx.Annotate(health.NewService, fx.As(new(health.IService))),
+			health.NewDelivery,
+			health.NewRoute,
+		),
+		fx.Invoke(registerRoutes, startHTTPServer),
+	))
+}
+
+func newAppLogger(config *configuration.Config) *logger.AppLog {
+	return logger.New(&config.App)
+}
+
+func registerRoutes(router *gin.Engine, healthRoute *health.Route) {
+	healthRoute.RegisterRoutes(router.Group("/"))
+}
+
+func startHTTPServer(lifecycle fx.Lifecycle, shutdowner fx.Shutdowner, config *configuration.Config, router *gin.Engine, _ *sql.DB, appLog *logger.AppLog) {
+	server := &http.Server{
+		Addr:    net.JoinHostPort(config.App.Host, strconv.Itoa(config.App.Port)),
+		Handler: router,
+	}
+
+	lifecycle.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			var listenConfig net.ListenConfig
+			listener, err := listenConfig.Listen(ctx, "tcp", server.Addr)
+			if err != nil {
+				return err
+			}
+
+			go func() {
+				if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+					appLog.Logger.WithError(err).Error("HTTP server failed")
+					_ = shutdowner.Shutdown(fx.ExitCode(1))
+				}
+			}()
+			return nil
+		},
+		OnStop: server.Shutdown,
+	})
+}

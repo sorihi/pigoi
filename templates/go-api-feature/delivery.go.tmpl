@@ -1,0 +1,40 @@
+package {{ .Name }}
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"{{ .Module }}/pkg/logger"
+)
+
+type Delivery struct {
+	service IService
+	logger  *logger.AppLog
+	// Add your delivery dependencies here
+}
+
+func NewDelivery(service IService, logger *logger.AppLog) *Delivery {
+	return &Delivery{
+		service: service,
+		logger:  logger,
+		// Initialize your delivery dependencies here
+	}
+}
+
+// Implement the IDelivery interface methods here
+func (d *Delivery) DummyHandler(ctx *gin.Context) {
+	d.logger.LogRequest(ctx.Request.Context(), ctx.Request, nil)
+
+	err := d.service.DummyMethod()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	response := gin.H{"message": "Dummy method executed successfully"}
+	ctx.JSON(http.StatusOK, response)
+	d.logger.LogResponse(ctx.Request.Context(), ctx.Request, &http.Response{
+		StatusCode: ctx.Writer.Status(),
+		Header:     ctx.Writer.Header(),
+	}, nil, response)
+}

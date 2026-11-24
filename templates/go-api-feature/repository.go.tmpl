@@ -1,0 +1,27 @@
+package {{ .Name }}
+
+import (
+	"database/sql"
+	"errors"
+)
+
+type Repository struct {
+	db *sql.DB
+	// Add your repository dependencies here
+}
+
+func NewRepository(db *sql.DB) *Repository {
+	return &Repository{
+		db: db,
+		// Initialize your repository dependencies here
+	}
+}
+
+// Implement the IRepository interface methods here
+func (r *Repository) DummyCall() error {
+	dbEstablished := r.db != nil
+	if dbEstablished {
+		return nil
+	}
+	return errors.New("database connection is not established")
+}

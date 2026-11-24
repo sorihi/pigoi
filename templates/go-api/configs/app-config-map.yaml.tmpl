@@ -1,0 +1,22 @@
+app:
+  name: {{ printf "%q" .Name }}
+  environment: local
+  debug: true
+  host: localhost
+  port: 9090
+  protocol: http
+
+db:
+  name: dbname
+  usr: ""
+  pw: ""
+  port: 3306
+  host: localhost
+
+redis:
+  addr: "127.0.0.1:6379"
+  pw: "secret"
+  db: 0
+
+rabbitmq:
+  url: "amqp://local:local-dev-password@localhost:5672/"
